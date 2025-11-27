@@ -5,7 +5,7 @@ from core.common_methods_agent import Common_Methods
 class PPOAgent(Common_Methods):
     def __init__(self, actor_nn, critic_nn, buffer_size=512, batch_size=64, nb_epochs=4, gamma=0.99, clip_value=0.2, lambda_gae=0.95, entropy_bonus=True, shuffle=True):
         super().__init__(algo="ppo")
-        if torch.cuda.is_available(): # CUDA NVIDIA
+        """if torch.cuda.is_available(): # CUDA NVIDIA
             self.device = torch.device("cuda")
             print(f"CUDA device available: {torch.cuda.get_device_name(0)}")
         elif torch.backends.mps.is_available():  # MAC M1/M2/M3
@@ -14,7 +14,8 @@ class PPOAgent(Common_Methods):
             self.device = torch.device("hip") # Only on Linux
         else:
             self.device = torch.device("cpu")
-            print("No GPU available, using CPU instead.")
+            print("No GPU available, using CPU instead.")"""
+        self.device = torch.device("cpu") # Force CPU for compatibility
         self.nna = actor_nn.to(self.device)
         self.nnc = critic_nn.to(self.device)
         self.loss_fct = torch.nn.MSELoss()
