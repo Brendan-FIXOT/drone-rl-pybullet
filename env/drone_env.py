@@ -131,7 +131,7 @@ class DroneEnv(gym.Env):
         
         progress = self.prev_dist - dist
 
-        time_penalty = 0.001
+        time_penalty = 0.001 # small penalty to encourage faster stabilization (not stalling)
 
         reward = progress - time_penalty
 
@@ -159,6 +159,9 @@ class DroneEnv(gym.Env):
         return False
 
     def render(self):
+        """
+        Render the environment.
+        """
         if self.render_mode == "rgb_array":
             width, height, rgb, _, _ = p.getCameraImage(400,400)
             return np.array(rgb)
