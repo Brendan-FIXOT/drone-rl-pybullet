@@ -1,14 +1,15 @@
 import torch
 import numpy as np
 from tqdm import tqdm
+import imageio
 
-class Agent_Methods :
+class Agents_Methods :
     def __init__(self):
         pass
 
     def train(self, env, episodes):
         for episode in tqdm(range(episodes), desc="Training", ncols=100, ascii=True):
-            state = env.reset()
+            state, _ = env.reset()
             done = False
                
             step_count = 0
@@ -61,6 +62,10 @@ class Agent_Methods :
         print(f"\nAverage reward over {testepisodes} test episodes: {avg_reward}")
         
     def preprocess_state(self, state):
+        # Gymnasium: (obs, info)
+        if isinstance(state, tuple):
+            state = state[0]
+
         # If already a tensor, return as-is
         if isinstance(state, torch.Tensor):
             print("State is already a tensor.")
@@ -78,7 +83,6 @@ class Agent_Methods :
 
         if state.ndim == 3:
             # Single image: (H, W, C) -> (1, C, H, W) for PyTorch Conv2d
-            # Breakout: (84, 84, 1) -> (1, 1, 84, 84)
             state = np.transpose(state, (2, 0, 1))  # (C, H, W)
             return torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
 
@@ -88,3 +92,47 @@ class Agent_Methods :
             return torch.tensor(state, dtype=torch.float32, device=self.device)
 
         raise ValueError(f"Unexpected state shape: {state.shape}")
+
+    def graphic_drone_episode(self, env, agent, filename="drone_test.gif", max_steps=500):
+        """
+        Visualise un épisode de test du drone et enregistre un GIF.
+        
+        - env : instance de DroneEnv(render_mode="rgb_array")
+        - agent : doit avoir une méthode getaction_ppo(state) -> (action, log_prob, value)
+        - filename : chemin du GIF de sortie
+        - max_steps : nombre max de steps dans l'épisode
+        """
+        # Reset de l'environnement
+        state, _ = env.reset()
+        done = False
+        frames = []
+
+        # Barre de progression
+        with tqdm(total=max_steps, desc="Création GIF drone", ncols=100, ascii=True) as pbar:
+            step = 0
+            while not done and step < max_steps:
+                # Rendu de l'image actuelle
+                frame = env.render()
+                if frame is not None:
+                    frames.append(frame)
+
+                # Sélection de l'action par l'agent (ici PPO discret/continu selon ton implémentation)
+                with torch.no_grad():
+                    action, _, _ = agent.getaction_ppo(state)
+
+                # Step environnement
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
+                state = next_state
+
+                step += 1
+                pbar.update(1)
+
+        env.close()
+
+        # Sauvegarde du GIF
+        if len(frames) > 0:
+            imageio.mimsave(filename, frames, fps=30)
+            print(f"GIF sauvegardé sous : {filename}")
+        else:
+            print("Aucune frame capturée : vérifie que l'env est en render_mode='rgb_array'.")

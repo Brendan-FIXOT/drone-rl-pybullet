@@ -1,10 +1,10 @@
 import torch
 from collections import deque
-from core.common_methods_agent import Common_Methods
+from core.agents_methods import Agents_Methods
 
-class PPOAgent(Common_Methods):
-    def __init__(self, actor_nn, critic_nn, buffer_size=512, batch_size=64, nb_epochs=4, gamma=0.99, clip_value=0.2, lambda_gae=0.95, entropy_bonus=True, shuffle=True):
-        super().__init__(algo="ppo")
+class PPOAgent(Agents_Methods):
+    def __init__(self, actor_nn, critic_nn, n_actions, buffer_size=512, batch_size=64, nb_epochs=4, gamma=0.99, clip_value=0.2, lambda_gae=0.95, entropy_bonus=True, shuffle=True):
+        super().__init__()
         """if torch.cuda.is_available(): # CUDA NVIDIA
             self.device = torch.device("cuda")
             print(f"CUDA device available: {torch.cuda.get_device_name(0)}")
@@ -18,6 +18,7 @@ class PPOAgent(Common_Methods):
         self.device = torch.device("cpu") # Force CPU for compatibility
         self.nna = actor_nn.to(self.device)
         self.nnc = critic_nn.to(self.device)
+        self.n_actions = n_actions
         self.loss_fct = torch.nn.MSELoss()
         self.buffer_size = buffer_size
         self.batch_size = batch_size
@@ -33,7 +34,7 @@ class PPOAgent(Common_Methods):
         
     @torch.no_grad() # We don't want to compute gradients when selecting actions, because we are not training
     def getaction_ppo(self, state):
-        state = Common_Methods.preprocess_state(self, state)
+        state = Agents_Methods.preprocess_state(self, state)
         probs = self.nna(state)
         dist = torch.distributions.Categorical(probs)
         action = dist.sample()
@@ -64,14 +65,14 @@ class PPOAgent(Common_Methods):
     def learn_ppo(self, last_state):        
         states, actions, rewards, dones, old_log_probs, values = zip(*self.memory) # Learning on a complete rollout
 
-        states = Common_Methods.preprocess_state(self, states)
+        states = Agents_Methods.preprocess_state(self, states)
         actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         dones = torch.tensor(dones, dtype=torch.float32, device=self.device) # unsqueeze not needed, already 1D for the compute_gae, dones and rewards are not used in the loss directly
         old_log_probs = torch.stack(old_log_probs).to(self.device)
         values = torch.stack(values).squeeze().to(self.device)
         
-        last_state = Common_Methods.preprocess_state(self, last_state)
+        last_state = Agents_Methods.preprocess_state(self, last_state)
         
         with torch.no_grad():
             last_value = self.nnc(last_state).squeeze(-1)

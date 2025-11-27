@@ -3,7 +3,6 @@ from gymnasium import spaces
 import numpy as np
 import pybullet as p
 import pybullet_data
-import time
 
 class DroneEnv(gym.Env):
     # to define the render modes and fps for graphical rendering
@@ -23,7 +22,8 @@ class DroneEnv(gym.Env):
         self.action_space = spaces.Box(
             low=np.array([0,0,0,0], dtype=np.float32),
             high=np.array([1,1,1,1], dtype=np.float32),
-            dtype=np.float32
+            dtype=np.float32,
+            shape=(4,)
         )
 
         obs_high = np.array([np.inf]*12, dtype=np.float32)
@@ -54,7 +54,7 @@ class DroneEnv(gym.Env):
         # Load drone
         startPos = [0, 0, 0.2]
         startOri = p.getQuaternionFromEuler([0, 0, 0])
-        self.drone = p.loadURDF("quadrotor.urdf", startPos, startOri)
+        self.drone = p.loadURDF("cube_small.urdf", startPos, startOri)
 
         self.step_counter = 0
 
@@ -79,7 +79,7 @@ class DroneEnv(gym.Env):
         
         action = np.clip(action, 0, 1)
 
-        max_force = 5
+        max_force = 5.0
         forces = action * max_force
 
         for i in range(4):
