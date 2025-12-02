@@ -21,8 +21,8 @@ class NeuralNetwork(nn.Module):
         x = self.fc3(x)
 
         if self.mode == "critic":
-            return x  # Return state values
+            return x.squeeze(-1)  # Return state values
         elif self.mode == "actor":
-            return F.softmax(x, dim=-1) # Apply softmax to get action probabilities
+            return x # Apply softmax to get action probabilities
         else:
             raise ValueError(f"Unknown mode: {self.mode}")

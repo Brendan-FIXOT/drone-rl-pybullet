@@ -1,24 +1,31 @@
+import numpy as np
 import torch
+from torch.distributions import Normal
 from collections import deque
 from core.agents_methods import Agents_Methods
 
 class PPOAgent(Agents_Methods):
-    def __init__(self, actor_nn, critic_nn, n_actions, buffer_size=512, batch_size=64, nb_epochs=4, gamma=0.99, clip_value=0.2, lambda_gae=0.95, entropy_bonus=True, shuffle=True):
+    def __init__(self, 
+            actor_nn,
+            critic_nn,
+            n_actions,
+            buffer_size=512,
+            batch_size=64,
+            nb_epochs=4,
+            gamma=0.99,
+            clip_value=0.2,
+            lambda_gae=0.95,
+            entropy_bonus=True,
+            shuffle=True,
+            action_std=0.5
+        ):
         super().__init__()
-        """if torch.cuda.is_available(): # CUDA NVIDIA
-            self.device = torch.device("cuda")
-            print(f"CUDA device available: {torch.cuda.get_device_name(0)}")
-        elif torch.backends.mps.is_available():  # MAC M1/M2/M3
-            self.device = torch.device("mps")
-        elif torch.version.hip is not None:     # AMD ROCm
-            self.device = torch.device("hip") # Only on Linux
-        else:
-            self.device = torch.device("cpu")
-            print("No GPU available, using CPU instead.")"""
+
         self.device = torch.device("cpu") # Force CPU for compatibility
         self.nna = actor_nn.to(self.device)
         self.nnc = critic_nn.to(self.device)
         self.n_actions = n_actions
+        self.action_std = torch.full((n_actions,), action_std, device=self.device) # For continuous action spaces (fixed to start)
         self.loss_fct = torch.nn.MSELoss()
         self.buffer_size = buffer_size
         self.batch_size = batch_size
@@ -34,18 +41,22 @@ class PPOAgent(Agents_Methods):
         
     @torch.no_grad() # We don't want to compute gradients when selecting actions, because we are not training
     def getaction_ppo(self, state):
-        state = Agents_Methods.preprocess_state(self, state)
-        probs = self.nna(state)
-        dist = torch.distributions.Categorical(probs)
+        """Select action according to current policy and return action, log probability and value."""
+        state = torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
+        mean = self.nna(state)
+        dist = Normal(mean, self.action_std)
         action = dist.sample()
-        log_prob = dist.log_prob(action)
+        log_prob = dist.log_prob(action).sum(dim=-1) 
         value = self.nnc(state)
-        return action.item(), log_prob, value
+        action_np = action.cpu().numpy()[0]
+        return action_np, log_prob, value
 
     def store_transition_ppo(self, state, action, reward, done, log_prob_old, value_old):
+        """Store transition in memory."""
         self.memory.append((state, action, reward, done, log_prob_old, value_old))
         
     def compute_gae(self, rewards, values, dones, next_value):
+        """Compute Generalized Advantage Estimation (GAE) and returns."""
         T = len(rewards)
         advantages = torch.zeros(T, dtype=torch.float32, device=self.device)
         
@@ -62,17 +73,19 @@ class PPOAgent(Agents_Methods):
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # Normalization
         return advantages, returns
         
-    def learn_ppo(self, last_state):        
+    def learn_ppo(self, last_state):
+        """Update policy and value networks using PPO algorithm."""
         states, actions, rewards, dones, old_log_probs, values = zip(*self.memory) # Learning on a complete rollout
 
-        states = Agents_Methods.preprocess_state(self, states)
-        actions = torch.tensor(actions, dtype=torch.int64, device=self.device)
+        states = np.array(states, dtype=np.float32)
+        states = torch.tensor(states, dtype=torch.float32, device=self.device)
+        actions = np.array(actions, dtype=np.float32)  # [T, n_actions]
+        actions = torch.tensor(actions, dtype=torch.float32, device=self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         dones = torch.tensor(dones, dtype=torch.float32, device=self.device) # unsqueeze not needed, already 1D for the compute_gae, dones and rewards are not used in the loss directly
         old_log_probs = torch.stack(old_log_probs).to(self.device)
         values = torch.stack(values).squeeze().to(self.device)
-        
-        last_state = Agents_Methods.preprocess_state(self, last_state)
+        last_state = torch.tensor(last_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         
         with torch.no_grad():
             last_value = self.nnc(last_state).squeeze(-1)
@@ -85,9 +98,9 @@ class PPOAgent(Agents_Methods):
         for epoch in range(self.nb_epochs):
             # indices shuffle or not
             if self.shuffle:
-                idx = torch.randperm(size)
+                idx = torch.randperm(size, device=self.device)
             else:
-                idx = torch.arange(size)
+                idx = torch.arange(size, device=self.device)
                 
             for start in range(0, size, self.batch_size):
                 end = min(start + self.batch_size, size)
@@ -100,10 +113,11 @@ class PPOAgent(Agents_Methods):
                 batch_returns = returns[batch_idx]
 
                 # New log probs and values
-                probs = self.nna(batch_states)
-                dist = torch.distributions.Categorical(probs)
-                new_log_probs = dist.log_prob(batch_actions)
-                new_values = self.nnc(batch_states).squeeze()
+                mean = self.nna(batch_states)
+                dist = Normal(mean, self.action_std)
+                log_progs_all = dist.log_prob(batch_actions)
+                new_log_probs = log_progs_all.sum(dim=-1)
+                new_values = self.nnc(batch_states).squeeze(-1)
 
                 # PPO loss
                 ratio = torch.exp(new_log_probs - batch_old_log_probs)

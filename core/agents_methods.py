@@ -12,10 +12,10 @@ class Agents_Methods :
             state, _ = env.reset()
             done = False
                
-            step_count = 0
             while not done:  
                 action, log_prob, value = self.getaction_ppo(state)
-                next_state, reward, done = env.step(action)
+                next_state, reward, terminated, truncated, _ = env.step(action)
+                done = terminated or truncated
 
                 self.store_transition_ppo(
                     state,
@@ -46,7 +46,7 @@ class Agents_Methods :
             total_reward = 0
 
             while not done:
-                s = self.preprocess_state(state)
+                s = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
                 probs = self.nna(s).squeeze(0).detach().cpu().numpy()
                 action = int(np.argmax(probs))
                 
@@ -61,38 +61,6 @@ class Agents_Methods :
         avg_reward = sum(total_rewards) / testepisodes
         print(f"\nAverage reward over {testepisodes} test episodes: {avg_reward}")
         
-    def preprocess_state(self, state):
-        # Gymnasium: (obs, info)
-        if isinstance(state, tuple):
-            state = state[0]
-
-        # If already a tensor, return as-is
-        if isinstance(state, torch.Tensor):
-            print("State is already a tensor.")
-            return state
-            
-        state = np.array(state, dtype=np.float32)
-
-        if state.ndim == 1:
-            # CartPole: (4,) -> (1, 4)
-            return torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-
-        if state.ndim == 2:
-            # Batch of 1D states: (batch, features)
-            return torch.tensor(state, dtype=torch.float32, device=self.device)
-
-        if state.ndim == 3:
-            # Single image: (H, W, C) -> (1, C, H, W) for PyTorch Conv2d
-            state = np.transpose(state, (2, 0, 1))  # (C, H, W)
-            return torch.tensor(state, dtype=torch.float32, device=self.device).unsqueeze(0)
-
-        if state.ndim == 4:
-            # Batch of images: (batch, H, W, C) -> (batch, C, H, W)
-            state = np.transpose(state, (0, 3, 1, 2))
-            return torch.tensor(state, dtype=torch.float32, device=self.device)
-
-        raise ValueError(f"Unexpected state shape: {state.shape}")
-
     def graphic_drone_episode(self, env, agent, filename="drone_test.gif", max_steps=500):
         """
         Visualise un épisode de test du drone et enregistre un GIF.

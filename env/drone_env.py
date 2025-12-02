@@ -42,9 +42,6 @@ class DroneEnv(gym.Env):
         """
         super().reset(seed=seed)
 
-        print("ASSETS_PATH =", self.ASSETS_PATH)
-        print("Exists:", os.path.isdir(self.ASSETS_PATH))
-
         if self.render_mode == "human":
             p.connect(p.GUI)
         else:
