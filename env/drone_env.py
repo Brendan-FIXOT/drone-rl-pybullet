@@ -2,11 +2,15 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pybullet as p
-import pybullet_data
+import os
 
 class DroneEnv(gym.Env):
     # to define the render modes and fps for graphical rendering
     metadata = {"render_modes": ["human", "rgb_array"], "render_fps": 60}
+
+    ASSETS_PATH = os.path.expanduser(
+        "~/Desktop/gym-pybullet-drones/gym_pybullet_drones/assets"
+    )
 
     def __init__(self, render_mode=None):
         super().__init__()
@@ -38,6 +42,9 @@ class DroneEnv(gym.Env):
         """
         super().reset(seed=seed)
 
+        print("ASSETS_PATH =", self.ASSETS_PATH)
+        print("Exists:", os.path.isdir(self.ASSETS_PATH))
+
         if self.render_mode == "human":
             p.connect(p.GUI)
         else:
@@ -46,15 +53,17 @@ class DroneEnv(gym.Env):
         p.resetSimulation()
         p.setTimeStep(self.time_step)
         p.setGravity(0, 0, -9.8)
-        p.setAdditionalSearchPath(pybullet_data.getDataPath())
-
-        # Load plane
-        p.loadURDF("plane.urdf")
+        p.setAdditionalSearchPath(self.ASSETS_PATH)
 
         # Load drone
         startPos = [0, 0, 0.2]
         startOri = p.getQuaternionFromEuler([0, 0, 0])
-        self.drone = p.loadURDF("cube_small.urdf", startPos, startOri)
+        self.drone = p.loadURDF(
+            "cf2x.urdf",
+            basePosition=[0,0,1],
+            useFixedBase=False,
+            flags=p.URDF_USE_INERTIA_FROM_FILE
+        )
 
         self.step_counter = 0
 
