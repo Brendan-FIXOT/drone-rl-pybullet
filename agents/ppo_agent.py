@@ -81,6 +81,9 @@ class PPOAgent(Agents_Methods):
         
     def learn_ppo(self, last_state):
         """Update policy and value networks using PPO algorithm."""
+        if len(self.memory) == 0:
+            return
+
         states, actions, rewards, dones, old_log_probs, values = zip(*self.memory) # Learning on a complete rollout
 
         states = np.array(states, dtype=np.float32)
@@ -89,7 +92,7 @@ class PPOAgent(Agents_Methods):
         actions = torch.tensor(actions, dtype=torch.float32, device=self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         dones = torch.tensor(dones, dtype=torch.float32, device=self.device) # unsqueeze not needed, already 1D for the compute_gae, dones and rewards are not used in the loss directly
-        old_log_probs = torch.stack(old_log_probs).unsqueeze(-1).to(self.device)
+        old_log_probs = torch.stack(old_log_probs).squeeze(-1).to(self.device)
         values = torch.stack(values).squeeze().to(self.device)
         last_state = torch.tensor(last_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         
@@ -97,7 +100,7 @@ class PPOAgent(Agents_Methods):
             last_value = self.nnc(last_state).squeeze(-1)
         
         # if the last state is terminal, next_value is 0
-        if dones[-1] == 1.0:
+        if dones[-1].item() == 1.0:
             next_value = torch.zeros((), device=self.device)
         else:
             next_value = last_value
