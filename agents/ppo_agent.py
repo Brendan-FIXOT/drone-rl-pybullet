@@ -15,6 +15,7 @@ class PPOAgent(Agents_Methods):
             gamma=0.99,
             clip_value=0.2,
             lambda_gae=0.95,
+            clip_vloss=True,
             entropy_bonus=True,
             shuffle=True,
             action_std=0.5
@@ -117,22 +118,31 @@ class PPOAgent(Agents_Methods):
                 # New log probs and values
                 mean = self.nna(batch_states)
                 dist = Normal(mean, self.action_std)
-                log_progs_all = dist.log_prob(batch_actions)
-                new_log_probs = log_progs_all.sum(dim=-1)
+                log_probs_all = dist.log_prob(batch_actions)
+                new_log_probs = log_probs_all.sum(dim=-1)
                 new_values = self.nnc(batch_states).squeeze(-1)
+
+                log_ratio = new_log_probs - batch_old_log_probs
+                ratio = torch.exp(log_ratio)
 
                 # Compute approximation KL
                 with torch.no_grad():
-                    logratio = new_log_probs - batch_old_log_probs
-                    ratio = torch.exp(logratio)
-                    approx_kl = ((ratio - 1) - logratio).mean().item()
+                    approx_kl = ((ratio - 1) - log_ratio).mean().item()
                     if approx_kl > self.target_kl:
                         break
 
                 # PPO loss
-                ratio = torch.exp(new_log_probs - batch_old_log_probs)
                 surr1 = ratio * batch_advantages.detach()
                 surr2 = torch.clamp(ratio, 1 - self.clip_value, 1 + self.clip_value) * batch_advantages.detach()
+
+                # Optional: clipped value loss
+                if self.clip_vloss:
+                    v_loss_unclipped = (new_values - batch_returns) ** 2
+                    v_clipped = batch_values + torch.clamp(new_values - batch_values, -self.clip_value, self.clip_value)
+                    v_loss_clipped = (v_clipped - batch_returns) ** 2
+                    v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
+                else:
+                    v_loss = 0.5 * (new_values - batch_returns).pow(2).mean()
 
                 # Optional: entropy bonus for exploration
                 if self.ent_bonus:
