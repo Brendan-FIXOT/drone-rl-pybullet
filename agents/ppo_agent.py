@@ -20,6 +20,7 @@ class PPOAgent(Agents_Methods):
             shuffle=True,
             action_std=0.5
             target_kl=0.03
+            max_grad_norm=0.5
         ):
         super().__init__()
 
@@ -156,10 +157,14 @@ class PPOAgent(Agents_Methods):
                 # Update networks with backpropagation
                 self.nna.optimizer.zero_grad()
                 actor_loss.backward()
+                if self.max_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(self.nna.parameters(), self.max_grad_norm)
                 self.nna.optimizer.step()
 
                 self.nnc.optimizer.zero_grad()
                 critic_loss.backward()
+                if self.max_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(self.nnc.parameters(), self.max_grad_norm)
                 self.nnc.optimizer.step()
         
         # Do not forget to clear memory
