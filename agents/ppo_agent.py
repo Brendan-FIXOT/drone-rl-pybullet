@@ -18,9 +18,9 @@ class PPOAgent(Agents_Methods):
             clip_vloss=True,
             entropy_bonus=True,
             shuffle=True,
-            action_std=0.5
-            target_kl=0.03
-            max_grad_norm=0.5
+            action_std=0.5,
+            target_kl=0.03,
+            max_grad_norm=0.5,
         ):
         super().__init__()
 
@@ -40,6 +40,8 @@ class PPOAgent(Agents_Methods):
         self.c1 = 0.5
         self.c2 = 0.01
         self.ent_bonus = entropy_bonus
+        self.clip_vloss = clip_vloss
+        self.max_grad_norm = max_grad_norm
         self.shuffle = shuffle
         self.target_kl = target_kl
         
@@ -87,18 +89,25 @@ class PPOAgent(Agents_Methods):
         actions = torch.tensor(actions, dtype=torch.float32, device=self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32, device=self.device)
         dones = torch.tensor(dones, dtype=torch.float32, device=self.device) # unsqueeze not needed, already 1D for the compute_gae, dones and rewards are not used in the loss directly
-        old_log_probs = torch.stack(old_log_probs).to(self.device)
+        old_log_probs = torch.stack(old_log_probs).unsqueeze(-1).to(self.device)
         values = torch.stack(values).squeeze().to(self.device)
         last_state = torch.tensor(last_state, dtype=torch.float32, device=self.device).unsqueeze(0)
         
         with torch.no_grad():
             last_value = self.nnc(last_state).squeeze(-1)
+        
+        # if the last state is terminal, next_value is 0
+        if dones[-1] == 1.0:
+            next_value = torch.zeros((), device=self.device)
+        else:
+            next_value = last_value
 
-        next_value = 0 if dones[-1] else last_value # if last state is done, so last value is 0
         advantages, returns = self.compute_gae(rewards, values, dones, next_value) # Bootstrap value for the last state
         
         size = len(rewards) # To ensure we go through the entire trajectory, not just with buffer_size
         
+        early_stop = False
+
         for epoch in range(self.nb_epochs):
             # indices shuffle or not
             if self.shuffle:
@@ -115,6 +124,7 @@ class PPOAgent(Agents_Methods):
                 batch_old_log_probs = old_log_probs[batch_idx]
                 batch_advantages = advantages[batch_idx]
                 batch_returns = returns[batch_idx]
+                batch_values = values[batch_idx]
 
                 # New log probs and values
                 mean = self.nna(batch_states)
@@ -130,6 +140,7 @@ class PPOAgent(Agents_Methods):
                 with torch.no_grad():
                     approx_kl = ((ratio - 1) - log_ratio).mean().item()
                     if approx_kl > self.target_kl:
+                        early_stop = True
                         break
 
                 # PPO loss
@@ -143,16 +154,16 @@ class PPOAgent(Agents_Methods):
                     v_loss_clipped = (v_clipped - batch_returns) ** 2
                     v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
                 else:
-                    v_loss = 0.5 * (new_values - batch_returns).pow(2).mean()
+                    v_loss = 0.5 * self.loss_fct(new_values, batch_returns)
 
                 # Optional: entropy bonus for exploration
                 if self.ent_bonus:
-                    entropy = dist.entropy().mean()
+                    entropy = dist.entropy().sum(dim=-1).mean()
                     actor_loss = -torch.min(surr1, surr2).mean() - self.c2 * entropy
-                    critic_loss = self.c1 * self.loss_fct(new_values, batch_returns)
+                    critic_loss = self.c1 * v_loss
                 else:
                     actor_loss = -torch.min(surr1, surr2).mean()
-                    critic_loss = self.c1 * self.loss_fct(new_values, batch_returns)
+                    critic_loss = self.c1 * v_loss
 
                 # Update networks with backpropagation
                 self.nna.optimizer.zero_grad()
@@ -166,6 +177,9 @@ class PPOAgent(Agents_Methods):
                 if self.max_grad_norm is not None:
                     torch.nn.utils.clip_grad_norm_(self.nnc.parameters(), self.max_grad_norm)
                 self.nnc.optimizer.step()
+            
+            if early_stop:
+                break
         
         # Do not forget to clear memory
         self.memory.clear()
