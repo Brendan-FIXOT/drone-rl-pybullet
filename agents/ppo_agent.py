@@ -18,6 +18,7 @@ class PPOAgent(Agents_Methods):
             entropy_bonus=True,
             shuffle=True,
             action_std=0.5
+            target_kl=0.03
         ):
         super().__init__()
 
@@ -38,6 +39,7 @@ class PPOAgent(Agents_Methods):
         self.c2 = 0.01
         self.ent_bonus = entropy_bonus
         self.shuffle = shuffle
+        self.target_kl = target_kl
         
     @torch.no_grad() # We don't want to compute gradients when selecting actions, because we are not training
     def getaction_ppo(self, state):
@@ -118,6 +120,14 @@ class PPOAgent(Agents_Methods):
                 log_progs_all = dist.log_prob(batch_actions)
                 new_log_probs = log_progs_all.sum(dim=-1)
                 new_values = self.nnc(batch_states).squeeze(-1)
+
+                # Compute approximation KL
+                with torch.no_grad():
+                    logratio = new_log_probs - batch_old_log_probs
+                    ratio = torch.exp(logratio)
+                    approx_kl = ((ratio - 1) - logratio).mean().item()
+                    if approx_kl > self.target_kl:
+                        break
 
                 # PPO loss
                 ratio = torch.exp(new_log_probs - batch_old_log_probs)
