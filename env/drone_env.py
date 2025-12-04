@@ -53,7 +53,7 @@ class DroneEnv(gym.Env):
         p.setAdditionalSearchPath(self.ASSETS_PATH)
 
         # Load drone
-        startPos = [0, 0, 0.2]
+        startPos = [0, 0, 1]
         startOri = p.getQuaternionFromEuler([0, 0, 0])
         self.drone = p.loadURDF(
             "cf2x.urdf",
@@ -65,8 +65,9 @@ class DroneEnv(gym.Env):
         self.step_counter = 0
 
         # for reward calculation
-        startPos_np = np.array(startPos, dtype=np.float32)
-        self.prev_dist = np.linalg.norm(startPos_np - self.target)
+        pos, _ = p.getBasePositionAndOrientation(self.drone)
+        pos_np = np.array(pos, dtype=np.float32)
+        self.prev_dist = np.linalg.norm(pos_np - self.target)
 
         obs = self._get_observation()
         return obs, {}
