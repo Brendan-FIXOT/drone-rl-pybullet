@@ -1,7 +1,7 @@
 import os
 import torch
 
-def run_pipeline(env, agent, interface, mode: str):
+def run_pipeline(env, num_envs, agent, interface, mode: str):
     """
     - Training
     - Eventual Save
@@ -10,8 +10,12 @@ def run_pipeline(env, agent, interface, mode: str):
     - Close of env is there
     """
     if interface.didtrain:
-        agent.train(env, interface.episodes)
-        print(f"Entraînement terminé pour {interface.episodes} épisodes.")
+        if num_envs > 1:
+            agent.train_ppo_vectorized(env, total_timesteps=10_000_000, num_steps=1024)
+            print("Entraînement vectorisé terminé.")
+        else:
+            agent.train_only(env, interface.episodes)
+            print(f"Entraînement terminé pour {interface.episodes} épisodes.")
 
         # Save (only ppo for now)
         if mode == "ppo":

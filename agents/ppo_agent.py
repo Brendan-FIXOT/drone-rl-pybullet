@@ -62,7 +62,16 @@ class PPOAgent(Agents_Methods):
         self.memory.append((state, action, reward, done, log_prob_old, value_old))
         
     def compute_gae(self, rewards, values, dones, next_value):
-        """Compute Generalized Advantage Estimation (GAE) and returns."""
+        """
+        Compute Generalized Advantage Estimation (GAE) and returns (single environment).
+        Inputs:
+        rewards: Tensor of shape [T]
+        values: Tensor of shape [T]
+        dones: Tensor of shape [T]
+        next_value: Scalar tensor
+        Outputs:
+        advantages: Tensor of shape [T]
+        returns: Tensor of shape [T]"""
         T = len(rewards)
         advantages = torch.zeros(T, dtype=torch.float32, device=self.device)
         
@@ -78,6 +87,41 @@ class PPOAgent(Agents_Methods):
         
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8) # Normalization
         return advantages, returns
+    
+    def compute_gae_vectorized(self, rewards, values, dones, next_done, next_values):
+        """
+        GAE computation in a vectorized environment.
+        Inputs:
+        rewards: Tensor of shape [num_steps, num_envs]
+        values: Tensor of shape [num_steps, num_envs]
+        dones: Tensor of shape [num_steps, num_envs]
+        next_done: Tensor of shape [num_envs]
+        next_values: Tensor of shape [num_envs]
+        Outputs:
+        advantages: Tensor of shape [num_steps, num_envs]
+        returns: Tensor of shape [num_steps, num_envs]
+        """
+        device = self.device
+        num_steps, num_envs = rewards.shape
+
+        advantages = torch.zeros_like(rewards, device=device)
+        lastgaelam = torch.zeros(num_envs, dtype=torch.float32, device=device)
+
+        for t in reversed(range(num_steps)):
+            if t == num_steps - 1:
+                next_nonterminal = 1.0 - next_done    # [N]
+                next_value = next_values              # [N]
+            else:
+                next_nonterminal = 1.0 - dones[t + 1] # [N]
+                next_value = values[t + 1]           # [N]
+
+            delta = rewards[t] + self.gamma * next_value * next_nonterminal - values[t]
+            lastgaelam = delta + self.gamma * self.lambda_gae * next_nonterminal * lastgaelam
+            advantages[t] = lastgaelam
+
+        returns = advantages + values
+        return advantages, returns
+
         
     def learn_ppo(self, last_state):
         """Update policy and value networks using PPO algorithm."""
@@ -186,3 +230,109 @@ class PPOAgent(Agents_Methods):
         
         # Do not forget to clear memory
         self.memory.clear()
+    
+    def learn_ppo_vectorized(self, obs_buf, actions_buf, logprob_buf, values_buf, advantages, returns):
+        """
+        PPO update vectorisé (façon CleanRL).
+        - obs_buf      : [T, N, obs_dim]
+        - actions_buf  : [T, N, act_dim]
+        - logprob_buf  : [T, N]
+        - values_buf   : [T, N]
+        - advantages   : [T, N]
+        - returns      : [T, N]
+        """
+        device = self.device
+
+        num_steps, num_envs = advantages.shape
+        obs_shape = obs_buf.shape[2:]
+        act_shape = actions_buf.shape[2:]
+
+        rollout_batch_size = num_steps * num_envs
+        minibatch_size = self.batch_size
+        assert rollout_batch_size % minibatch_size == 0
+
+        # Flatten
+        b_obs        = obs_buf.reshape((rollout_batch_size,) + obs_shape)
+        b_actions    = actions_buf.reshape((rollout_batch_size,) + act_shape)
+        b_logprobs   = logprob_buf.reshape(rollout_batch_size)
+        b_advantages = advantages.reshape(rollout_batch_size)
+        b_returns    = returns.reshape(rollout_batch_size)
+        b_values     = values_buf.reshape(rollout_batch_size)
+
+        b_inds = np.arange(rollout_batch_size)
+
+        for epoch in range(self.nb_epochs):
+            np.random.shuffle(b_inds)
+
+            for start in range(0, rollout_batch_size, minibatch_size):
+                end = start + minibatch_size
+                mb_inds = b_inds[start:end]
+
+                mb_obs        = b_obs[mb_inds]
+                mb_actions    = b_actions[mb_inds]
+                mb_oldlog     = b_logprobs[mb_inds]
+                mb_advantages = b_advantages[mb_inds]
+                mb_returns    = b_returns[mb_inds]
+                mb_values     = b_values[mb_inds]
+
+                # New log_probs et values
+                mean = self.nna(mb_obs)
+                dist = torch.distributions.Normal(mean, self.action_std.to(device))
+                log_probs_all = dist.log_prob(mb_actions)
+                new_log_probs = log_probs_all.sum(dim=-1)
+                new_values    = self.nnc(mb_obs).squeeze(-1)
+
+                log_ratio = new_log_probs - mb_oldlog
+                ratio = torch.exp(log_ratio)
+
+                # approx KL pour early stop éventuel
+                with torch.no_grad():
+                    approx_kl = ((ratio - 1) - log_ratio).mean().item()
+                    if self.target_kl is not None and approx_kl > self.target_kl:
+                        print(f"[PPO] Early stop epoch because KL={approx_kl:.4f} > target_kl={self.target_kl}")
+                        return  # on sort de learn_ppo_vectorized
+
+                # Normalisation avantages
+                mb_advantages = (mb_advantages - mb_advantages.mean()) / (mb_advantages.std() + 1e-8)
+                mb_advantages = mb_advantages.detach()
+
+                # PPO clipped objective
+                surr1 = ratio * mb_advantages
+                surr2 = torch.clamp(ratio, 1 - self.clip_value, 1 + self.clip_value) * mb_advantages
+                policy_loss = -torch.min(surr1, surr2).mean()
+
+                # Value loss (avec ou sans clipping)
+                if self.clip_vloss:
+                    v_loss_unclipped = (new_values - mb_returns) ** 2
+                    v_clipped = mb_values + torch.clamp(
+                        new_values - mb_values,
+                        -self.clip_value,
+                        self.clip_value,
+                    )
+                    v_loss_clipped = (v_clipped - mb_returns) ** 2
+                    v_loss = 0.5 * torch.max(v_loss_unclipped, v_loss_clipped).mean()
+                else:
+                    v_loss = 0.5 * self.loss_fct(new_values, mb_returns)
+
+                # Entropy bonus
+                if self.ent_bonus:
+                    entropy = dist.entropy().sum(dim=-1).mean()
+                else:
+                    entropy = torch.tensor(0.0, device=device)
+
+                actor_loss  = policy_loss - self.c2 * entropy
+                critic_loss = self.c1 * v_loss
+
+                # Update actor
+                self.nna.optimizer.zero_grad()
+                actor_loss.backward()
+                if self.max_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(self.nna.parameters(), self.max_grad_norm)
+                self.nna.optimizer.step()
+
+                # Update critic
+                self.nnc.optimizer.zero_grad()
+                critic_loss.backward()
+                if self.max_grad_norm is not None:
+                    torch.nn.utils.clip_grad_norm_(self.nnc.parameters(), self.max_grad_norm)
+                self.nnc.optimizer.step()

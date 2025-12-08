@@ -3,14 +3,21 @@ from core.interface import Interface
 from core.runner import run_pipeline
 from agents.ppo_agent import PPOAgent
 from core.neural_network import NeuralNetwork
+from env.vecto_env import create_vector_env
 import torch
 
 if __name__ == "__main__":
     interface = Interface()
 
-    env = DroneEnv()
-    n_actions = env.action_space.shape[0]
+    num_envs = 8
+    if num_envs > 1:
+        env = create_vector_env(num_envs, seed=42)
+        print("Vector envs créés avec", env.num_envs, "environnements.")
+    else:
+        env = DroneEnv()
 
+    n_actions = 4
+    
     mode = interface.ask_mode()  # only ppo for now
 
     if mode == "ppo":
@@ -50,6 +57,6 @@ if __name__ == "__main__":
                 interface.episodes = int(input("How many episodes would you like to train the model for? "))
         else:
             interface.didtrain = True
-            interface.episodes = int(input("How many episodes would you like to train the model for? "))
+            if num_envs == 1 : interface.episodes = int(input("How many episodes would you like to train the model for? "))
 
-    run_pipeline(env=env, agent=agent, interface=interface, mode=mode)
+    run_pipeline(env=env, num_envs=num_envs, agent=agent, interface=interface, mode=mode)
