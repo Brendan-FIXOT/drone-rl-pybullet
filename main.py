@@ -8,7 +8,8 @@ from core.interface import Interface
 from core.runner import run_pipeline
 from agents.ppo_agent import PPOAgent
 from core.neural_network import NeuralNetwork
-from env.vecto_env import create_vector_env
+from env.vecto_env import create_vector_async_env
+from env.vecto_env import create_vector_sync_env
 
 if __name__ == "__main__":
     interface = Interface()
@@ -20,7 +21,11 @@ if __name__ == "__main__":
         num_envs = 1
 
     if num_envs > 1:
-        env = create_vector_env(num_envs, seed=42)
+        async_choice = int(input("Choose vectorized environment type: 1 for AsyncVectorEnv, 2 for SyncVectorEnv: "))
+        if async_choice == 1:
+            env = create_vector_async_env(num_envs, seed=42)
+        else:
+            env = create_vector_sync_env(num_envs, seed=42)
         print("Vector envs créés avec", env.num_envs, "environnements.")
     else:
         env = DroneEnv()

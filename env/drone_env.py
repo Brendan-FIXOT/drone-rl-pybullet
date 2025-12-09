@@ -34,41 +34,53 @@ class DroneEnv(gym.Env):
         self.observation_space = spaces.Box(-obs_high, obs_high, dtype=np.float32)
 
         self.step_counter = 0
-        self.target = np.array([0, 0, 1.0])  # Target position (hover)
+        self.target = np.array([0, 0, 1.0], dtype=np.float32)  # Target position (hover)
 
-    def reset(self, seed=None, options=None):
-        """
-        Reset the environment to an initial state and return the initial observation.
-        """
-        super().reset(seed=seed)
-
+        # Connect to PyBullet
         if self.render_mode == "human":
-            p.connect(p.GUI)
+            self.client_id = p.connect(p.GUI)
         else:
-            p.connect(p.DIRECT)
+            # always use DIRECT for training
+            self.client_id = p.connect(p.DIRECT)
 
-        p.resetSimulation()
-        p.setTimeStep(self.time_step)
-        p.setGravity(0, 0, -9.8)
-        p.setAdditionalSearchPath(self.ASSETS_PATH)
+        p.setTimeStep(self.time_step, physicsClientId=self.client_id)
+        p.setGravity(0, 0, -9.8, physicsClientId=self.client_id)
+        p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
 
-        # Load drone
-        startPos = [0, 0, 1]
-        startOri = p.getQuaternionFromEuler([0, 0, 0])
+        p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+
+        # Initialize the simulation
+        self._reset_sim()
+    
+    def _reset_sim(self):
+        """Reset the simulation without reconnecting PyBullet."""
+        p.resetSimulation(physicsClientId=self.client_id)
+        p.setTimeStep(self.time_step, physicsClientId=self.client_id)
+        p.setGravity(0, 0, -9.8, physicsClientId=self.client_id)
+        p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
+
+        p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+
+        start_pos = [0, 0, 1.0]
+        start_ori = p.getQuaternionFromEuler([0, 0, 0])
+
         self.drone = p.loadURDF(
             "cf2x.urdf",
-            basePosition=[0,0,1],
+            basePosition=start_pos,
+            baseOrientation=start_ori,
             useFixedBase=False,
-            flags=p.URDF_USE_INERTIA_FROM_FILE
+            flags=p.URDF_USE_INERTIA_FROM_FILE,
+            physicsClientId=self.client_id,
         )
 
         self.step_counter = 0
+        start_pos_np = np.array(start_pos, dtype=np.float32)
+        self.prev_dist = np.linalg.norm(start_pos_np - self.target)
 
-        # for reward calculation
-        pos, _ = p.getBasePositionAndOrientation(self.drone)
-        pos_np = np.array(pos, dtype=np.float32)
-        self.prev_dist = np.linalg.norm(pos_np - self.target)
-
+    def reset(self, seed=None, options=None):
+        """Reset the environment to an initial state and return the initial observation."""
+        super().reset(seed=seed)
+        self._reset_sim()
         obs = self._get_observation()
         return obs, {}
 
@@ -93,12 +105,13 @@ class DroneEnv(gym.Env):
             p.applyExternalForce(
                 self.drone,
                 linkIndex=i,
-                forceObj=[0, 0, forces[i]],
+                forceObj=[0, 0, float(forces[i])],
                 posObj=[0, 0, 0],
-                flags=p.LINK_FRAME
+                flags=p.LINK_FRAME,
+                physicsClientId=self.client_id,
             )
 
-        p.stepSimulation()
+        p.stepSimulation(physicsClientId=self.client_id)
         self.step_counter += 1
 
         obs = self._get_observation()
@@ -109,16 +122,16 @@ class DroneEnv(gym.Env):
         if terminated:
             reward -= 10.0 # heavy penalty for crashing
 
-        return obs, reward, terminated, truncated, {}
+        return obs, float(reward), terminated, truncated, {}
 
     def _get_observation(self):
         """
         Get the current observation of the drone.
         Observation includes position, orientation (Euler), linear and angular velocities.
         """
-        pos, orn = p.getBasePositionAndOrientation(self.drone)
+        pos, orn = p.getBasePositionAndOrientation(self.dronen, physicsClientId=self.client_id)
         rpy = p.getEulerFromQuaternion(orn)
-        lin_vel, ang_vel = p.getBaseVelocity(self.drone)
+        lin_vel, ang_vel = p.getBaseVelocity(self.drone, physicsClientId=self.client_id)
 
         obs = np.array([
             pos[0], pos[1], pos[2],
@@ -170,7 +183,7 @@ class DroneEnv(gym.Env):
         Render the environment.
         """
         if self.render_mode == "rgb_array":
-            width, height, rgb, _, _ = p.getCameraImage(400,400)
+            width, height, rgb, _, _ = p.getCameraImage(400,400, physicsClientId=self.client_id)
             return np.array(rgb)
         return None
 
