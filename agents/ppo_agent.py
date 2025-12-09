@@ -289,7 +289,7 @@ class PPOAgent(Agents_Methods):
                 with torch.no_grad():
                     approx_kl = ((ratio - 1) - log_ratio).mean().item()
                     if self.target_kl is not None and approx_kl > self.target_kl:
-                        print(f"[PPO] Early stop epoch because KL={approx_kl:.4f} > target_kl={self.target_kl}")
+                        #print(f"[PPO] Early stop epoch because KL={approx_kl:.4f} > target_kl={self.target_kl}")
                         return  # on sort de learn_ppo_vectorized
 
                 # Normalisation avantages

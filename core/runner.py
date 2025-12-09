@@ -14,7 +14,7 @@ def run_pipeline(env, num_envs, agent, interface, mode: str):
             agent.train_ppo_vectorized(env, total_timesteps=10_000_000, num_steps=1024)
             print("Entraînement vectorisé terminé.")
         else:
-            agent.train_only(env, interface.episodes)
+            agent.train_ppo(env, interface.episodes)
             print(f"Entraînement terminé pour {interface.episodes} épisodes.")
 
         # Save (only ppo for now)

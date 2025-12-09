@@ -9,7 +9,7 @@ class Agents_Methods :
     def __init__(self):
         pass
 
-    def train(self, env, episodes):
+    def train_ppo(self, env, episodes):
         for episode in tqdm(range(episodes), desc="Training", ncols=100, ascii=True):
             state, _ = env.reset()
             done = False

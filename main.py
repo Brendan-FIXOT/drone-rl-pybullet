@@ -9,7 +9,12 @@ import torch
 if __name__ == "__main__":
     interface = Interface()
 
-    num_envs = 8
+    try :
+        num_envs = int(input("How many env ? (1 for single env, more for vectorized envs) : "))
+    except ValueError:
+        print("Invalid input, defaulting to 1 environment.")
+        num_envs = 1
+
     if num_envs > 1:
         env = create_vector_env(num_envs, seed=42)
         print("Vector envs créés avec", env.num_envs, "environnements.")
@@ -52,9 +57,9 @@ if __name__ == "__main__":
                 print("Model PPO find.")
                 interface.didtrainfct()
             except FileNotFoundError:
-                print("DQN Model not find, lauch...")
+                print("PPO Model not find, lauch...")
                 interface.didtrain = True
-                interface.episodes = int(input("How many episodes would you like to train the model for? "))
+                if num_envs == 1 : interface.episodes = int(input("How many episodes would you like to train the model for? "))
         else:
             interface.didtrain = True
             if num_envs == 1 : interface.episodes = int(input("How many episodes would you like to train the model for? "))
