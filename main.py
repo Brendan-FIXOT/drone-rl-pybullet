@@ -1,10 +1,14 @@
+import torch
+
+torch.set_num_threads(1)
+torch.set_num_interop_threads(1)
+
 from env.drone_env import DroneEnv
 from core.interface import Interface
 from core.runner import run_pipeline
 from agents.ppo_agent import PPOAgent
 from core.neural_network import NeuralNetwork
 from env.vecto_env import create_vector_env
-import torch
 
 if __name__ == "__main__":
     interface = Interface()
