@@ -62,10 +62,11 @@ class DroneEnv(gym.Env):
         p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
 
         # ground
+        plane_path = os.path.join(pybullet_data.getDataPath(), "plane.urdf")
         try:
-            p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+            p.loadURDF(plane_path, physicsClientId=self.client_id)
         except Exception as e:
-            print("[DroneEnv] Warning: cannot load plane.urdf:", e)
+            print("[DroneEnv] Warning: cannot load plane.urdf at", plane_path, ":", e)
 
         start_pos = [0, 0, 1.0]
         start_ori = p.getQuaternionFromEuler([0, 0, 0])
@@ -135,7 +136,7 @@ class DroneEnv(gym.Env):
         Get the current observation of the drone.
         Observation includes position, orientation (Euler), linear and angular velocities.
         """
-        pos, orn = p.getBasePositionAndOrientation(self.dronen, physicsClientId=self.client_id)
+        pos, orn = p.getBasePositionAndOrientation(self.drone, physicsClientId=self.client_id)
         rpy = p.getEulerFromQuaternion(orn)
         lin_vel, ang_vel = p.getBaseVelocity(self.drone, physicsClientId=self.client_id)
 
