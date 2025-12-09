@@ -2,6 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
 import pybullet as p
+import pybullet_data
 import os
 
 class DroneEnv(gym.Env):
@@ -45,9 +46,9 @@ class DroneEnv(gym.Env):
 
         p.setTimeStep(self.time_step, physicsClientId=self.client_id)
         p.setGravity(0, 0, -9.8, physicsClientId=self.client_id)
-        p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
 
-        p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+        p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.client_id)
+        p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
 
         # Initialize the simulation
         self._reset_sim()
@@ -57,9 +58,14 @@ class DroneEnv(gym.Env):
         p.resetSimulation(physicsClientId=self.client_id)
         p.setTimeStep(self.time_step, physicsClientId=self.client_id)
         p.setGravity(0, 0, -9.8, physicsClientId=self.client_id)
+        p.setAdditionalSearchPath(pybullet_data.getDataPath(), physicsClientId=self.client_id)
         p.setAdditionalSearchPath(self.ASSETS_PATH, physicsClientId=self.client_id)
 
-        p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+        # ground
+        try:
+            p.loadURDF("plane.urdf", physicsClientId=self.client_id)
+        except Exception as e:
+            print("[DroneEnv] Warning: cannot load plane.urdf:", e)
 
         start_pos = [0, 0, 1.0]
         start_ori = p.getQuaternionFromEuler([0, 0, 0])
